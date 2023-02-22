@@ -1,0 +1,129 @@
+﻿@page "/do-chat"
+@using JiuLing.CommonLibs.ExtensionMethods;
+@using OpenAI.GPT3.Managers;
+@using OpenAI.GPT3;
+@using OpenAI.GPT3.ObjectModels.RequestModels;
+@using OpenAI.GPT3.ObjectModels;
+@using OpenAIChat.Models;
+
+<PageTitle>Chat</PageTitle>
+<div class="container">
+    <div class="body">
+        @{
+            foreach (var history in _histories)
+            {
+                <div class="question-item">
+                    <div class="speech-content">@history.Question</div>
+                    @if (history.Anwsers.Count == 0)
+                    {
+                        <div class="loading">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    }
+                    else
+                    {
+                        foreach (var anwser in history.Anwsers)
+                        {
+                            <div>@anwser</div>
+                            <br />
+                        }
+                    }
+                </div>
+            }
+        }
+    </div>
+    <div class="footer">
+        <input class="search-input" placeholder="想聊点什么呢？" @bind="_searchKey" @onkeyup="KeyUp" />
+        <input class="search-button" type="button" value="提问" @onclick="BeginChat" />
+    </div>
+</div>
+
+@code {
+    private List<QuestionAndAnswer> _histories = new List<QuestionAndAnswer>();
+    private bool _isLoading = false;
+    private string _searchKey = "";
+    const string OPENAPI_TOKEN = "";
+    OpenAIService service = new OpenAIService(new OpenAiOptions() { ApiKey = OPENAPI_TOKEN });
+    CompletionCreateRequest createRequest = new CompletionCreateRequest()
+        {
+
+            Temperature = 0.3f,
+            MaxTokens = 1000
+        };
+    private void KeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
+    {
+        if (args.Key != "Enter")
+        {
+            return;
+        }
+        InvokeAsync(RequestOpenAI);
+    }
+
+    private async void BeginChat()
+    {
+        await RequestOpenAI();
+    }
+
+    private async Task RequestOpenAI()
+    {
+        if (_searchKey.IsEmpty())
+        {
+            return;
+        }
+        if (_isLoading)
+        {
+            return;
+        }
+        _isLoading = true;
+
+        string question = _searchKey;
+        List<string> answers = new List<string>();
+        _searchKey = "";
+        _histories.Add(new QuestionAndAnswer(question, answers));
+        StateHasChanged();
+        try
+        {
+            createRequest.Prompt = question;
+
+            var res = await service.Completions.CreateCompletion(createRequest, Models.TextDavinciV3);
+
+            if (res.Successful)
+            {
+                //这里将返回值转成字符串展示，不直接作为HTML，防止有风险
+                var answerArray = res.Choices.First().Text.Split("\n");
+                foreach (var item in answerArray)
+                {
+                    var answer = item.Trim();
+                    if (answer.IsEmpty())
+                    {
+                        continue;
+                    }
+                    answers.Add(answer);
+                }
+
+                if (answers.Count == 0)
+                {
+                    answers.Add("对方似乎不想理你....");
+                }
+            }
+            else
+            {
+                answers.Add("对方似乎没搞懂你想干啥....");
+            }
+        }
+        catch (Exception ex)
+        {
+            answers.Add($"崩了，崩了，{ex.Message}，{ex.StackTrace}");
+        }
+        finally
+        {
+            _histories.Where(x => x.Question == question).First().Anwsers = answers;
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+}
