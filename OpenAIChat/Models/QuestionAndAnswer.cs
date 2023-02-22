@@ -3,11 +3,11 @@
 public class QuestionAndAnswer
 {
     public string Question { get; set; }
-    public List<string> Answers { get; set; }
+    public string Answer { get; set; }
 
-    public QuestionAndAnswer(string question, List<string> answers)
+    public QuestionAndAnswer(string question, string answer)
     {
         Question = question;
-        Answers = answers;
+        Answer = answer;
     }
 }

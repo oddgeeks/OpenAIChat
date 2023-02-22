@@ -16,7 +16,7 @@
             {
                 <div class="question-item">
                     <div class="speech-content">@history.Question</div>
-                    @if (history.Answers.Count == 0)
+                    @if (history.Answer.IsEmpty())
                     {
                         <div class="loading">
                             <span></span>
@@ -28,11 +28,9 @@
                     }
                     else
                     {
-                        foreach (var answer in history.Answers)
-                        {
-                            <div>@answer</div>
-                            <br />
-                        }
+                        <div>
+                            @(new MarkupString(history.Answer.Replace("\n", "<br />")))
+                        </div>
                     }
                 </div>
             }
@@ -59,7 +57,7 @@
         _createRequest = new CompletionCreateRequest()
             {
 
-                Temperature = 0.3f,
+                Temperature = 0,
                 MaxTokens = 1000
             };
 
@@ -93,48 +91,42 @@
         }
         _isLoading = true;
 
-        string question = _searchKey;
-        List<string> answers = new List<string>();
+        string question = $"Question:{_searchKey}";
+        string answer = "";
         _searchKey = "";
-        _histories.Add(new QuestionAndAnswer(question, answers));
+
+        string context = string.Join(" ", _histories.Select(x => $"{x.Question}\n{x.Answer}\n"));
+        _histories.Add(new QuestionAndAnswer(question, answer));
         StateHasChanged();
         try
         {
-            _createRequest.Prompt = question;
+            string prompt = $"{context}{question}";
+            if (prompt.Length >= MyAppSettings.Value.ContextMaxLength)
+            {
+                answer = "语境有点长了，请刷新页面后重新玩耍~~~~";
+                return;
+            }
+            _createRequest.Prompt = $"{context}{question}";
 
             var res = await _service.Completions.CreateCompletion(_createRequest, Models.TextDavinciV3);
 
             if (res.Successful)
             {
-                //这里将返回值转成字符串展示，不直接作为HTML，防止有风险
-                var answerArray = res.Choices.First().Text.Split("\n");
-                foreach (var item in answerArray)
-                {
-                    var answer = item.Trim();
-                    if (answer.IsEmpty())
-                    {
-                        continue;
-                    }
-                    answers.Add(answer);
-                }
-
-                if (answers.Count == 0)
-                {
-                    answers.Add("对方似乎不想理你....");
-                }
+                answer = res.Choices.First().Text;
+                answer = answer.Trim('\n');
             }
             else
             {
-                answers.Add("对方似乎没搞懂你想干啥....");
+                answer = "对方似乎没搞懂你想干啥....";
             }
         }
         catch (Exception ex)
         {
-            answers.Add($"崩了，崩了，{ex.Message}，{ex.StackTrace}");
+            answer = $"崩了，崩了，{ex.Message}，{ex.StackTrace}";
         }
         finally
         {
-            _histories.First(x => x.Question == question).Answers = answers;
+            _histories.First(x => x.Question == question).Answer = answer;
             _isLoading = false;
             StateHasChanged();
         }
