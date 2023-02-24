@@ -8,10 +8,17 @@
 @using OpenAIChat.Models;
 
 @inject IOptions<AppSettings> MyAppSettings;
+@inject NavigationManager NavigationManager
 <PageTitle>Chat</PageTitle>
 <div class="container">
     <div class="body">
         @{
+            if (_isSaveContext)
+            {
+                <div class="alert-box">
+                    <p>当前模式会记录对话内容，尽可能的让对话更流畅，所以比较耗资源，您玩玩就好啦~~</p>
+                </div>
+            }
             foreach (var history in _histories)
             {
                 <div class="question-item">
@@ -28,9 +35,7 @@
                     }
                     else
                     {
-                        <div>
-                            @(new MarkupString(history.Answer.Replace("\n", "<br />")))
-                        </div>
+                        <MarkdownComponent Content="@history.Answer" />
                     }
                 </div>
             }
@@ -39,6 +44,8 @@
     <div class="footer">
         <input class="search-input" placeholder="想聊点什么呢？" @bind="_searchKey" @onkeyup="KeyUp" />
         <input class="search-button" type="button" value="提问" @onclick="BeginChat" />
+        <input type="checkbox" class="switch" checked="@_isSaveContext" @onchange="SaveContextChanged">
+        <span>连续对话</span>
     </div>
 </div>
 
@@ -46,6 +53,7 @@
 
     private bool _isLoading;
     private string _searchKey = "";
+    private bool _isSaveContext = true;
     private List<QuestionAndAnswer> _histories = null!;
     OpenAIService _service = null!;
     CompletionCreateRequest _createRequest = null!;
@@ -61,9 +69,14 @@
                 MaxTokens = 1000
             };
 
+        var uri = new Uri(NavigationManager.Uri);
+        var isSaveContext = uri.ParseQueryString().Get("SaveContext");
+        if (!bool.TryParse(isSaveContext, out _isSaveContext))
+        {
+            _isSaveContext = false;
+        }
         return base.OnInitializedAsync();
     }
-
 
     private void KeyUp(KeyboardEventArgs args)
     {
@@ -72,6 +85,11 @@
             return;
         }
         InvokeAsync(RequestOpenAI);
+    }
+
+    private void SaveContextChanged(ChangeEventArgs e)
+    {
+        NavigationManager.NavigateTo($"/do-chat?SaveContext={Convert.ToBoolean(e.Value)}", true);
     }
 
     private async void BeginChat()
@@ -91,11 +109,10 @@
         }
         _isLoading = true;
 
-        string question = $"Question:{_searchKey}";
+        string question = _isSaveContext ? $"提问:{_searchKey}" : _searchKey;
         string answer = "";
         _searchKey = "";
-
-        string context = string.Join(" ", _histories.Select(x => $"{x.Question}\n{x.Answer}\n"));
+        string context = _isSaveContext ? string.Join("\n", _histories.Select(x => $"{x.Question}\n{x.Answer}")) : "";
         _histories.Add(new QuestionAndAnswer(question, answer));
         StateHasChanged();
         try
@@ -126,7 +143,7 @@
         }
         finally
         {
-            _histories.First(x => x.Question == question).Answer = answer;
+            _histories.Last(x => x.Question == question).Answer = answer;
             _isLoading = false;
             StateHasChanged();
         }
